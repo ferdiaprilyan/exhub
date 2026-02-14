@@ -1,0 +1,21 @@
+{
+  "name": "manga-reader",
+  "version": "1.0.0",
+  "description": "Webapp pembaca manga dengan sistem Extension",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "express": "^4.19.2"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.58.2"
+  }
+}

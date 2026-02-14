@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -d node_modules ]; then
+  echo "[start] node_modules tidak ditemukan, menjalankan npm install..."
+  npm install
+fi
+
+if [ "${USE_PLAYWRIGHT:-}" = "1" ]; then
+  export USE_PLAYWRIGHT=1
+elif [ "${USE_JINA:-}" = "1" ]; then
+  export USE_JINA=1
+else
+  os_name=$(uname -o 2>/dev/null || uname -s)
+  case "$os_name" in
+    *Android*)
+      export USE_JINA=1
+      ;;
+  esac
+fi
+
+exec node server.js

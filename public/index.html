@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Manga Reader Extensions</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="app.css?v=20260214-2" />
+  </head>
+  <body>
+    <div class="ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+    </div>
+
+    <nav class="site-nav">
+      <div class="nav__inner">
+        <div class="brand">EXHub</div>
+        <div class="nav__buttons">
+          <button class="nav__btn nav__btn--icon" id="navHome" type="button" aria-label="Beranda">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 10.8 12 4l9 6.8v8.7a1 1 0 0 1-1 1h-5.5a1 1 0 0 1-1-1v-4.9h-3v4.9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <button class="nav__btn nav__btn--icon" id="navSearchToggle" type="button" aria-label="Search">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle
+                cx="11"
+                cy="11"
+                r="6.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+              />
+              <path
+                d="M16 16l4.2 4.2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+    <div class="nav-search-bar" id="navSearchBar">
+      <input
+        id="navSearchInput"
+        type="text"
+        placeholder="Cari..."
+        aria-label="Search"
+      />
+      <button class="nav__btn" id="navSearch" type="button">
+        Cari
+      </button>
+    </div>
+
+    <header class="hero">
+      <div></div>
+      <div></div>
+    </header>
+
+    <main class="layout">
+      <section class="panel panel-explorer">
+        <div class="panel-header">
+          <h2>Explorer</h2>
+          <p>Cari manga atau lihat daftar terbaru dari extension.</p>
+        </div>
+        <div class="controls">
+          <select id="extSelect"></select>
+        </div>
+        <div class="type-switch" id="typeSwitch">
+          <button class="ghost type-btn active" data-type="">All</button>
+          <button class="ghost type-btn" data-type="Manga">Manga</button>
+          <button class="ghost type-btn" data-type="Doujinshi">Doujinshi</button>
+          <button class="ghost type-btn" data-type="Manhwa">Manhwa</button>
+        </div>
+        <div class="type-label" id="typeLabel">All</div>
+        <div class="list" id="results"></div>
+        <div class="pagination" id="pagination"></div>
+      </section>
+
+      <section class="panel detail" id="detailPanel">
+        <div class="panel-header panel-header--row">
+          <div>
+            <h2>Detail</h2>
+            <p>Pilih manga untuk melihat info dan daftar chapter.</p>
+          </div>
+          <button class="ghost back-btn" id="backBtn" type="button">
+            Kembali
+          </button>
+        </div>
+        <div id="detail"></div>
+      </section>
+    </main>
+
+    <section class="viewer" id="viewer">
+      <div class="viewer-header">
+        <div>
+          <button class="ghost viewer-back" id="viewerBack" type="button">
+            Kembali
+          </button>
+          <p class="eyebrow">Chapter</p>
+          <h2 id="chapterTitle">Belum dipilih</h2>
+        </div>
+        <div class="viewer-actions">
+          <button class="ghost" id="prevChapter">
+            Prev <span class="dots" aria-hidden="true"></span>
+          </button>
+          <button class="ghost" id="nextChapter">
+            Next <span class="dots" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <div class="reader" id="reader"></div>
+      <div class="viewer-footer">
+        <div class="viewer-actions">
+          <button class="ghost" id="prevChapterBottom">
+            Prev <span class="dots" aria-hidden="true"></span>
+          </button>
+          <button class="ghost" id="nextChapterBottom">
+            Next <span class="dots" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <script src="vendor/hls.min.js"></script>
+    <script src="app.js?v=20260214-2"></script>
+  </body>
+</html>
