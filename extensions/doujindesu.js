@@ -479,7 +479,8 @@ function parseNavFromMarkdown(markdown) {
 async function fetchPage(url) {
   return getHtml(url, {
     usePlaywright: process.env.USE_PLAYWRIGHT === '1',
-    useJina: process.env.USE_JINA === '1'
+    useJina: process.env.USE_JINA === '1',
+    autoJina: true
   });
 }
 

@@ -39,6 +39,15 @@ function titleFromUrl(url) {
   }
 }
 
+function isGenericTitle(title) {
+  if (!title) return true;
+  const lower = title.toLowerCase();
+  if (lower.includes('idlix')) return true;
+  if (lower.includes('nonton film')) return true;
+  if (lower.includes('subtitle indonesia')) return true;
+  return false;
+}
+
 function isNonContentUrl(url) {
   if (!url) return true;
   const lower = url.toLowerCase();
@@ -81,7 +90,8 @@ function extractCover($el) {
 async function fetchPage(url) {
   return getHtml(url, {
     usePlaywright: process.env.USE_PLAYWRIGHT === '1',
-    useJina: process.env.USE_JINA === '1'
+    useJina: process.env.USE_JINA === '1',
+    autoPlaywright: true
   });
 }
 
@@ -96,12 +106,12 @@ function parseCards(html) {
     const url = absoluteUrl(link);
     if (!url || isNonContentUrl(url)) return;
 
-    const title =
+    let title =
       cleanText($(el).find('h1, h2, h3, h4, .title, .data h3').first().text()) ||
       cleanText($(el).find('a[title]').first().attr('title')) ||
       cleanText($(el).find('img').first().attr('alt')) ||
-      cleanText($(el).text()) ||
-      titleFromUrl(url);
+      cleanText($(el).text());
+    if (!title) title = titleFromUrl(url);
 
     const cover = extractCover($(el));
 
@@ -118,11 +128,11 @@ function parseCards(html) {
     const url = absoluteUrl($(el).attr('href'));
     if (!url || isNonContentUrl(url)) return;
     if (!url.startsWith(baseUrl)) return;
-    const title =
+    let title =
       cleanText($(el).attr('title')) ||
       cleanText($(el).text()) ||
-      cleanText($(el).find('img').attr('alt')) ||
-      titleFromUrl(url);
+      cleanText($(el).find('img').attr('alt'));
+    if (!title) title = titleFromUrl(url);
     if (!title) return;
     items.push({
       title,
@@ -156,8 +166,9 @@ function parseChapters($) {
     const url = absoluteUrl(href);
     if (!url || !url.startsWith(baseUrl)) return;
     if (isNonContentUrl(url)) return;
-    const name =
-      cleanText($(el).text()) || cleanText($(el).attr('title')) || url;
+    let name =
+      cleanText($(el).text()) || cleanText($(el).attr('title'));
+    if (!name) name = titleFromUrl(url) || url;
     if (!name) return;
     chapters.push({
       name,
@@ -171,6 +182,8 @@ function parseChapters($) {
 function parsePlayerUrl($) {
   const iframe =
     $('iframe[src]').first().attr('src') ||
+    $('iframe[data-src]').first().attr('data-src') ||
+    $('iframe[data-lazy-src]').first().attr('data-lazy-src') ||
     $('#player iframe[src]').attr('src') ||
     $('.player iframe[src]').attr('src') ||
     null;
@@ -186,6 +199,7 @@ function parsePlayerUrl($) {
         $el.attr('data-embed') ||
         $el.attr('data-player') ||
         $el.attr('data-link') ||
+        $el.attr('data-url') ||
         $el.find('[data-src]').attr('data-src') ||
         $el.find('[data-embed]').attr('data-embed');
       if (candidate) picked = candidate;
@@ -201,6 +215,48 @@ function parseVideoUrl($) {
     $('video').first().attr('data-src') ||
     null;
   return source;
+}
+
+function findIframeUrlFromHtml(html) {
+  if (!html) return null;
+  const match =
+    html.match(/<iframe[^>]+src=["']([^"']+)["']/i) ||
+    html.match(/data-(?:src|embed|player|link|url)=["']([^"']+)["']/i);
+  return match ? match[1] : null;
+}
+
+function findStreamUrlFromHtml(html) {
+  if (!html) return null;
+  const direct =
+    html.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/i) ||
+    html.match(/https?:\/\/[^'"\s]+\.mp4[^'"\s]*/i);
+  if (direct) return direct[0];
+
+  const fileMatch = html.match(
+    /file\s*[:=]\s*["'](https?:\/\/[^"'\s]+)["']/i
+  );
+  if (fileMatch) return fileMatch[1];
+
+  const sourceMatch = html.match(
+    /source\s*[:=]\s*\[\s*\{\s*file\s*[:=]\s*["'](https?:\/\/[^"'\s]+)["']/i
+  );
+  if (sourceMatch) return sourceMatch[1];
+
+  const atobRegex = /atob\(['"]([^'"]+)['"]\)/gi;
+  let match;
+  while ((match = atobRegex.exec(html))) {
+    try {
+      const decoded = Buffer.from(match[1], 'base64').toString('utf8');
+      const hit =
+        decoded.match(/https?:\/\/[^'"\s]+\.m3u8[^'"\s]*/i) ||
+        decoded.match(/https?:\/\/[^'"\s]+\.mp4[^'"\s]*/i);
+      if (hit) return hit[0];
+    } catch (err) {
+      // ignore decode errors
+    }
+  }
+
+  return null;
 }
 
 async function search(query) {
@@ -223,11 +279,11 @@ async function getManga(url) {
   const html = await fetchPage(target);
   const $ = cheerio.load(html);
 
-  const title =
+  let title =
     cleanText($('h1').first().text()) ||
     cleanText($('meta[property=\"og:title\"]').attr('content')) ||
-    cleanText($('title').first().text()) ||
-    titleFromUrl(target);
+    cleanText($('title').first().text());
+  if (!title || isGenericTitle(title)) title = titleFromUrl(target);
 
   const cover =
     $('.poster img').attr('src') ||
@@ -278,19 +334,35 @@ async function getChapter(url) {
   const html = await fetchPage(target);
   const $ = cheerio.load(html);
 
-  const title =
+  let title =
     cleanText($('h1').first().text()) ||
     cleanText($('meta[property=\"og:title\"]').attr('content')) ||
-    cleanText($('title').first().text()) ||
-    'Streaming';
+    cleanText($('title').first().text());
+  if (!title || isGenericTitle(title)) {
+    title = titleFromUrl(target) || 'Streaming';
+  }
 
-  const iframe = parsePlayerUrl($);
-  const video = parseVideoUrl($);
+  let iframe = parsePlayerUrl($);
+  let video = parseVideoUrl($);
+  if (!iframe) {
+    const fallbackIframe = findIframeUrlFromHtml(html);
+    if (fallbackIframe) iframe = fallbackIframe;
+  }
+  if (!video) {
+    const fallbackVideo = findStreamUrlFromHtml(html);
+    if (fallbackVideo) video = fallbackVideo;
+  }
+  let error;
+  if (!iframe && !video) {
+    error =
+      'Streaming tidak ditemukan. Coba buka halaman sumber atau aktifkan USE_PLAYWRIGHT=1.';
+  }
 
   return {
     title,
     iframe: iframe || null,
     video: video || undefined,
+    error,
     images: [],
     nav: { prev: null, next: null }
   };

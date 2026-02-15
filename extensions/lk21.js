@@ -1,5 +1,6 @@
 const cheerio = require('cheerio');
-const { getHtml, looksLikeCloudflare } = require('../lib/http');
+const { setTimeout: delay } = require('node:timers/promises');
+const { getHtml, looksLikeCloudflare, getPlaywrightBrowser } = require('../lib/http');
 
 const baseUrl = 'https://tv8.lk21official.cc';
 const USER_AGENT =
@@ -223,6 +224,72 @@ function findPosterUrl(html) {
   return null;
 }
 
+async function waitForAbyssFrame(page, timeoutMs = 30000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const frame = page
+      .frames()
+      .find((f) => f.url() && f.url().includes('abysscdn.com'));
+    if (frame) return frame;
+    await delay(500);
+  }
+  return null;
+}
+
+async function resolveHydraxStreamViaPlaywright(iframeUrl) {
+  let browser;
+  try {
+    browser = await getPlaywrightBrowser();
+  } catch (err) {
+    return null;
+  }
+
+  const page = await browser.newPage({
+    userAgent: USER_AGENT,
+    locale: 'id-ID'
+  });
+  page.setDefaultTimeout(15000);
+
+  await page.route('**/*', (route) => {
+    const type = route.request().resourceType();
+    if (type === 'image' || type === 'font' || type === 'stylesheet') {
+      return route.abort();
+    }
+    return route.continue();
+  });
+
+  try {
+    await page.goto(iframeUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const frame = await waitForAbyssFrame(page, 30000);
+    if (!frame) return null;
+
+    await frame.waitForFunction(() => {
+      const v = document.querySelector('video');
+      return v && (v.currentSrc || v.src || v.getAttribute('src'));
+    }, { timeout: 30000 });
+
+    const result = await frame.evaluate(() => {
+      const v = document.querySelector('video');
+      if (!v) return null;
+      return {
+        video: v.currentSrc || v.src || v.getAttribute('src') || '',
+        poster: v.getAttribute('poster') || ''
+      };
+    });
+
+    if (!result || !result.video) return null;
+    return {
+      video: result.video,
+      poster: result.poster || null,
+      direct: true
+    };
+  } catch (err) {
+    return null;
+  } finally {
+    await page.close();
+  }
+}
+
 async function resolveHydraxStream(iframeUrl) {
   const id = extractHydraxId(iframeUrl);
   if (!id) return null;
@@ -243,6 +310,9 @@ async function resolveHydraxStream(iframeUrl) {
     // ignore and keep shortUrl
   }
 
+  const viaPlaywright = await resolveHydraxStreamViaPlaywright(iframeUrl);
+  if (viaPlaywright) return viaPlaywright;
+
   let html;
   try {
     html = await getHtml(targetUrl, {
@@ -250,7 +320,15 @@ async function resolveHydraxStream(iframeUrl) {
       useJina: process.env.USE_JINA === '1'
     });
   } catch (err) {
-    return null;
+    if (err?.code === 'CLOUDFLARE_BLOCK' && process.env.USE_PLAYWRIGHT !== '1') {
+      try {
+        html = await getHtml(targetUrl, { usePlaywright: true });
+      } catch (err2) {
+        return null;
+      }
+    } else {
+      return null;
+    }
   }
 
   if (looksLikeCloudflare(html, 200)) return null;
@@ -516,13 +594,17 @@ async function getChapter(url) {
   const $ = cheerio.load(html);
   const candidates = collectPlayerCandidates($);
   const preferredServers = ['hydrax'];
-  const hydraxOnly = candidates.filter((item) => item.server === 'hydrax');
+  const hydraxOnly = candidates.filter(
+    (item) =>
+      (item.server && item.server.includes('hydrax')) || isHydraxUrl(item.url)
+  );
   const ordered = sortCandidates(hydraxOnly, preferredServers);
   const fallback = ordered[0] || null;
   const iframe = fallback?.url || null;
   let video;
   let videos;
   let poster;
+  let error;
 
   for (const candidate of ordered) {
     if (!candidate?.url) continue;
@@ -530,7 +612,9 @@ async function getChapter(url) {
       const resolved = await resolveStreamingSource(candidate.url, target);
       if (resolved?.video) {
         const referer = resolved.referer || target;
-        video = buildStreamProxyUrl(resolved.video, referer);
+        video = resolved.direct
+          ? resolved.video
+          : buildStreamProxyUrl(resolved.video, referer);
         poster = resolved.poster || null;
         if (Array.isArray(resolved.variants) && resolved.variants.length) {
           videos = resolved.variants.map((item) => ({
@@ -553,12 +637,19 @@ async function getChapter(url) {
     cleanTitle(metaTitle) ||
     'Streaming';
 
+  if (!video) {
+    error =
+      'Stream Hydrax diblokir Cloudflare. Instal Playwright (npx playwright install chromium) agar server bisa mengambil video.';
+  }
+
   return {
     title,
-    iframe: video ? null : iframe,
+    iframe,
     video,
     videos,
     poster,
+    openExternal: true,
+    error,
     images: [],
     nav: { prev: null, next: null }
   };

@@ -5,6 +5,7 @@ const { proxyImage, proxyStream, closeBrowser } = require('./lib/http');
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
+const MAX_PORT_ATTEMPTS = 10;
 const extensions = loadExtensions();
 
 app.use(express.json({ limit: '1mb' }));
@@ -106,10 +107,31 @@ app.get('/api/stream', async (req, res) => {
 
 app.use('/', express.static(path.join(__dirname, 'public')));
 
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Server jalan di http://localhost:${port}`);
-});
+function startServer(basePort, attempt = 0) {
+  const nextPort = basePort + attempt;
+  const server = app.listen(nextPort, () => {
+    // eslint-disable-next-line no-console
+    console.log(`Server jalan di http://localhost:${nextPort}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_ATTEMPTS) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Port ${nextPort} sudah dipakai, mencoba port ${nextPort + 1}...`
+      );
+      startServer(basePort, attempt + 1);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.error(
+      `Gagal menjalankan server di port ${nextPort}: ${err.message}`
+    );
+    process.exit(1);
+  });
+}
+
+startServer(port);
 
 process.on('SIGINT', async () => {
   await closeBrowser();

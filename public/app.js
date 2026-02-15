@@ -226,6 +226,17 @@ function clearChapterView() {
   if (nextBtnBottom) nextBtnBottom.disabled = true;
 }
 
+function renderDetailError(message) {
+  detailEl.innerHTML = `<p>${message || 'Gagal memuat detail.'}</p>`;
+  openDetailView();
+}
+
+function renderChapterError(message) {
+  chapterTitleEl.textContent = 'Gagal memuat';
+  readerEl.innerHTML = `<p>${message || 'Gagal memuat chapter.'}</p>`;
+  setReadingMode(true);
+}
+
 function exitReader() {
   setReadingMode(false);
   if (state.currentManga?.url) {
@@ -501,12 +512,96 @@ function renderDetail(data) {
 }
 
 function renderChapter(data) {
-  chapterTitleEl.textContent = data.title || 'Chapter';
+  const rawTitle = data.title || '';
+  const genericTitle = (value) => {
+    if (!value) return true;
+    const lower = value.toLowerCase();
+    if (lower.includes('idlix')) return true;
+    if (lower.includes('nonton film')) return true;
+    if (lower.includes('subtitle indonesia')) return true;
+    if (lower === 'streaming') return true;
+    return false;
+  };
+  const fallbackTitle = state.currentManga?.title || 'Chapter';
+  chapterTitleEl.textContent = genericTitle(rawTitle) ? fallbackTitle : rawTitle;
   readerEl.innerHTML = '';
   if (currentHls) {
     currentHls.destroy();
     currentHls = null;
   }
+  if (data.openExternal && data.iframe) {
+    const note = document.createElement('div');
+    note.className = 'player-note';
+    note.innerHTML = `
+      <p>Streaming ini hanya bisa diputar di player eksternal.</p>
+      <a href="${data.iframe}" target="_blank" rel="noopener noreferrer">
+        Buka Player
+      </a>
+    `;
+    readerEl.appendChild(note);
+    return;
+  }
+  const mountIframe = (iframeUrl) => {
+    if (!iframeUrl) return;
+    if (state.autoOpenPlayer) {
+      const note = document.createElement('div');
+      note.className = 'player-note';
+      note.innerHTML = `
+        <p>Player dibuka otomatis di tab baru.</p>
+        ${
+          state.autoOpenBlocked
+            ? '<p>Popup diblokir browser. Klik tombol di bawah untuk membuka manual.</p>'
+            : '<p>Jika tab baru tidak muncul, gunakan tombol di bawah.</p>'
+        }
+        <a href="${iframeUrl}" target="_blank" rel="noopener noreferrer">
+          Buka Player
+        </a>
+      `;
+      readerEl.appendChild(note);
+      return;
+    }
+    const note = document.createElement('div');
+    note.className = 'player-note';
+    note.innerHTML = `
+      <p>Jika player tidak tampil, buka langsung di tab baru:</p>
+      <a href="${iframeUrl}" target="_blank" rel="noopener noreferrer">
+        Buka Player
+      </a>
+    `;
+    readerEl.appendChild(note);
+    const frame = document.createElement('div');
+    frame.className = 'video-frame';
+    frame.innerHTML = `
+      <iframe
+        src="${iframeUrl}"
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowfullscreen
+        loading="lazy"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+      ></iframe>
+      <div class="player-fallback">
+        <p>Player tidak bisa ditampilkan di sini. Buka di tab baru:</p>
+        <a href="${iframeUrl}" target="_blank" rel="noopener noreferrer">
+          Buka Player
+        </a>
+      </div>
+    `;
+    readerEl.appendChild(frame);
+
+    const iframe = frame.querySelector('iframe');
+    const fallback = frame.querySelector('.player-fallback');
+    if (iframe && fallback) {
+      let resolved = false;
+      const timer = window.setTimeout(() => {
+        if (!resolved) fallback.classList.add('show');
+      }, 3500);
+      iframe.addEventListener('load', () => {
+        resolved = true;
+        window.clearTimeout(timer);
+        fallback.classList.remove('show');
+      });
+    }
+  };
   if (data.video) {
     const frame = document.createElement('div');
     frame.className = 'video-frame';
@@ -567,59 +662,37 @@ function renderChapter(data) {
     }
 
     setSource(sources[0]?.url || data.video);
+    if (data.iframe) {
+      video.addEventListener(
+        'error',
+        () => {
+          if (currentHls) {
+            currentHls.destroy();
+            currentHls = null;
+          }
+          readerEl.innerHTML = '';
+          mountIframe(data.iframe);
+        },
+        { once: true }
+      );
+    }
   }
   if (data.iframe) {
-    if (state.autoOpenPlayer) {
-      const note = document.createElement('div');
-      note.className = 'player-note';
-      note.innerHTML = `
-        <p>Player dibuka otomatis di tab baru.</p>
-        ${
-          state.autoOpenBlocked
-            ? '<p>Popup diblokir browser. Klik tombol di bawah untuk membuka manual.</p>'
-            : '<p>Jika tab baru tidak muncul, gunakan tombol di bawah.</p>'
-        }
-        <a href="${data.iframe}" target="_blank" rel="noopener noreferrer">
-          Buka Player
-        </a>
-      `;
-      readerEl.appendChild(note);
+    if (!data.video) {
+      mountIframe(data.iframe);
       return;
-    }
-    const frame = document.createElement('div');
-    frame.className = 'video-frame';
-    frame.innerHTML = `
-      <iframe
-        src="${data.iframe}"
-        allow="autoplay; fullscreen; picture-in-picture"
-        allowfullscreen
-        loading="lazy"
-      ></iframe>
-      <div class="player-fallback">
-        <p>Player tidak bisa ditampilkan di sini. Buka di tab baru:</p>
-        <a href="${data.iframe}" target="_blank" rel="noopener noreferrer">
-          Buka Player
-        </a>
-      </div>
-    `;
-    readerEl.appendChild(frame);
-
-    const iframe = frame.querySelector('iframe');
-    const fallback = frame.querySelector('.player-fallback');
-    if (iframe && fallback) {
-      let resolved = false;
-      const timer = window.setTimeout(() => {
-        if (!resolved) fallback.classList.add('show');
-      }, 3500);
-      iframe.addEventListener('load', () => {
-        resolved = true;
-        window.clearTimeout(timer);
-        fallback.classList.remove('show');
-      });
     }
   }
   if (!data.images || data.images.length === 0) {
     if (data.iframe || data.video) return;
+    if (data.error) {
+      readerEl.innerHTML = `<p>${data.error}</p>`;
+      return;
+    }
+    if (state.currentExt && (state.currentExt.id === 'idlixku' || state.currentExt.id === 'lk21')) {
+      readerEl.innerHTML = '<p>Streaming tidak tersedia.</p>';
+      return;
+    }
     readerEl.innerHTML = '<p>Gambar tidak ditemukan.</p>';
     return;
   }
@@ -695,70 +768,62 @@ async function search() {
 async function loadManga(url, opts = {}) {
   if (!state.currentExt) return;
   setStatus('Memuat detail...');
-  const data = await api(
-    `/api/${state.currentExt.id}/manga?url=${encodeURIComponent(url)}`
-  );
-  state.currentManga = data.data;
-  renderDetail(state.currentManga);
-  openDetailView();
-  setReadingMode(false);
-  clearChapterView();
-  if (opts.push !== false) {
-    pushViewState('detail', {
-      ext: state.currentExt.id,
-      mangaUrl: url
-    });
+  try {
+    const data = await api(
+      `/api/${state.currentExt.id}/manga?url=${encodeURIComponent(url)}`
+    );
+    state.currentManga = data.data;
+    renderDetail(state.currentManga);
+    openDetailView();
+    setReadingMode(false);
+    clearChapterView();
+    if (opts.push !== false) {
+      pushViewState('detail', {
+        ext: state.currentExt.id,
+        mangaUrl: url
+      });
+    }
+    setStatus('Siap');
+  } catch (err) {
+    state.currentManga = null;
+    setStatus('Gagal');
+    renderDetailError(err.message);
   }
-  setStatus('Siap');
 }
 
 async function loadChapter(url, opts = {}) {
   if (!state.currentExt) return;
   setStatus('Memuat chapter...');
-  const shouldAutoOpen =
-    opts.userInitiated && state.currentExt.id === 'lk21';
-  let popup = null;
-  if (shouldAutoOpen) {
-    try {
-      popup = window.open('', '_blank');
-    } catch (err) {
-      popup = null;
+  try {
+    const data = await api(
+      `/api/${state.currentExt.id}/chapter?url=${encodeURIComponent(url)}`
+    );
+    state.currentChapter = data.data;
+    state.autoOpenPlayer = false;
+    state.autoOpenBlocked = false;
+    renderChapter(state.currentChapter);
+    const baseNav = sanitizeNav(state.currentChapter?.nav, url);
+    const derivedNav = deriveNavFromList(url);
+    state.chapterNav = derivedNav.found
+      ? { prev: derivedNav.prev, next: derivedNav.next }
+      : { prev: baseNav.prev, next: baseNav.next };
+    prevBtn.disabled = !state.chapterNav.prev;
+    nextBtn.disabled = !state.chapterNav.next;
+    if (prevBtnBottom) prevBtnBottom.disabled = !state.chapterNav.prev;
+    if (nextBtnBottom) nextBtnBottom.disabled = !state.chapterNav.next;
+    setReadingMode(true);
+    if (opts.push !== false) {
+      pushViewState('chapter', {
+        ext: state.currentExt.id,
+        mangaUrl: state.currentManga ? state.currentManga.url : null,
+        chapterUrl: url
+      });
     }
+    setStatus('Siap');
+  } catch (err) {
+    setStatus('Gagal');
+    renderChapterError(err.message);
   }
-  const data = await api(
-    `/api/${state.currentExt.id}/chapter?url=${encodeURIComponent(url)}`
-  );
-  state.currentChapter = data.data;
-  state.autoOpenPlayer = Boolean(shouldAutoOpen && state.currentChapter?.iframe);
-  state.autoOpenBlocked = false;
-  if (state.autoOpenPlayer) {
-    if (popup && !popup.closed) {
-      popup.location = state.currentChapter.iframe;
-    } else {
-      state.autoOpenBlocked = true;
-    }
-  } else if (popup && !popup.closed) {
-    popup.close();
-  }
-  renderChapter(state.currentChapter);
-  const baseNav = sanitizeNav(state.currentChapter?.nav, url);
-  const derivedNav = deriveNavFromList(url);
-  state.chapterNav = derivedNav.found
-    ? { prev: derivedNav.prev, next: derivedNav.next }
-    : { prev: baseNav.prev, next: baseNav.next };
-  prevBtn.disabled = !state.chapterNav.prev;
-  nextBtn.disabled = !state.chapterNav.next;
-  if (prevBtnBottom) prevBtnBottom.disabled = !state.chapterNav.prev;
-  if (nextBtnBottom) nextBtnBottom.disabled = !state.chapterNav.next;
-  setReadingMode(true);
-  if (opts.push !== false) {
-    pushViewState('chapter', {
-      ext: state.currentExt.id,
-      mangaUrl: state.currentManga ? state.currentManga.url : null,
-      chapterUrl: url
-    });
-  }
-  setStatus('Siap');
 }
 
 extSelect.addEventListener('change', () => {
